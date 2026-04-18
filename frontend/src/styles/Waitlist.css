@@ -1,0 +1,24 @@
+.waitlist-container {
+  padding: 120px 5% 40px;
+  background: #0a0a0a;
+  min-height: 100vh;
+  color: white;
+  font-family: "Poppins", sans-serif;
+}
+
+.waitlist-container h2 {
+  color: #ff7a00;
+  margin-bottom: 20px;
+}
+
+.waitlist-container ul {
+  list-style: none;
+  padding: 0;
+}
+
+.waitlist-container li {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 14px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}

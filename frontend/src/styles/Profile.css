@@ -1,0 +1,49 @@
+.profile-container {
+  padding: 120px 5% 40px;
+  color: white;
+  background: #0a0a0a;
+  min-height: 100vh;
+  font-family: "Poppins", sans-serif;
+}
+
+.profile-container h2 {
+  margin-bottom: 30px;
+  color: #ff7a00;
+}
+
+.profile-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 40px;
+}
+
+.profile-pic {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px solid #ff7a00;
+  object-fit: cover;
+}
+
+.name-input {
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+  text-align: center;
+  font-size: 16px;
+}
+
+.profile-section {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 20px;
+  border-radius: 14px;
+  margin-bottom: 20px;
+}
+
+.profile-section h3 {
+  color: #ffb067;
+  margin-bottom: 10px;
+}
