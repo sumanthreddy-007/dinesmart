@@ -43,6 +43,7 @@ function BookTable() {
   const [time, setTime] = useState("");
   const [partySize, setPartySize] = useState(2);
   const [selectedTableId, setSelectedTableId] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -97,6 +98,11 @@ function BookTable() {
       return;
     }
 
+    if (!phone) {
+      alert("Please provide a phone number for SMS notifications");
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -115,6 +121,7 @@ function BookTable() {
           partySize,
           tableId: selectedTableId,
           totalAmount,
+          phone,
         }),
       });
 
@@ -133,7 +140,7 @@ function BookTable() {
     } finally {
       setLoading(false);
     }
-  }, [restaurant, date, time, selectedTableId, partySize, totalAmount, navigate]);
+  }, [restaurant, date, time, selectedTableId, partySize, totalAmount, phone, navigate]);
 
   return (
     <div className="book-table-page">
@@ -262,6 +269,16 @@ function BookTable() {
             <h3>3. Booking Summary</h3>
 
             <div className="summary-card">
+              <label className="sage-label" style={{marginBottom: "5px", display: "block"}}>Phone Number (for SMS)</label>
+              <input 
+                type="tel" 
+                value={phone} 
+                onChange={(e) => setPhone(e.target.value)} 
+                placeholder="+1234567890"
+                style={{width: "100%", padding: "10px", marginBottom: "15px", borderRadius: "8px", border: "1px solid #ccc"}}
+                required
+              />
+
               <div className="summary-info">
                 <div className="info-row">
                   <span>Restaurant</span>
@@ -296,7 +313,7 @@ function BookTable() {
 
               <button
                 className="final-book-btn"
-                disabled={!selectedTableId || !time || !date || loading}
+                disabled={!selectedTableId || !time || !date || !phone || loading}
                 onClick={handleBooking}
               >
                 {loading ? "Processing..." : "Confirm Booking"}
