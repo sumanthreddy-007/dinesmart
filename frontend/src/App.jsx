@@ -10,31 +10,26 @@ import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import Waitlist from "./pages/Waitlist";
 
-// Protected Route
 const ProtectedRoute = ({ children, role }) => {
   const token = localStorage.getItem("token");
   const userRole = localStorage.getItem("role");
 
-  if (!token) {
-    return <Navigate to="/" />;
-  }
-
-  if (role && userRole !== role) {
-    return <Navigate to="/" />;
-  }
+  if (!token) return <Navigate to="/" replace />;
+  if (role && userRole !== role) return <Navigate to="/" replace />;
 
   return children;
 };
 
 function App() {
+  const hasToken = Boolean(localStorage.getItem("token"));
+
   return (
     <Router>
-      {localStorage.getItem("token") && <Navbar />}
+      {hasToken && <Navbar />}
 
       <Routes>
         <Route path="/" element={<Login />} />
 
-        {/* CUSTOMER */}
         <Route
           path="/customer"
           element={
@@ -43,6 +38,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/restaurants"
           element={
@@ -51,6 +47,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/book"
           element={
@@ -59,6 +56,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/waitlist"
           element={
@@ -67,6 +65,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/profile"
           element={
@@ -76,7 +75,6 @@ function App() {
           }
         />
 
-        {/* STAFF */}
         <Route
           path="/staff"
           element={
@@ -86,7 +84,6 @@ function App() {
           }
         />
 
-        {/* ADMIN */}
         <Route
           path="/admin"
           element={
@@ -95,6 +92,8 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );

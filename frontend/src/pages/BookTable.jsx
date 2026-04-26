@@ -10,34 +10,19 @@ const PARTY_OPTIONS = [
 ];
 
 const TIME_SLOTS = [
-  "11:00",
-  "11:30",
-  "12:00",
-  "12:30",
-  "13:00",
-  "13:30",
-  "14:00",
-  "14:30",
-  "18:00",
-  "18:30",
-  "19:00",
-  "19:30",
-  "20:00",
-  "20:30",
-  "21:00",
-  "21:30",
-  "22:00",
+  "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+  "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30", "22:00",
 ];
 
 const TABLE_GRID = Array.from({ length: 20 }, (_, i) => ({
-  id: `${String.fromCharCode(65 + Math.floor(i / 5))}${(i % 5) + 1}`,
-  capacity: i >= 15 ? 6 : i < 5 ? 2 : 4,
+  id: `T${i + 1}`,
+  capacity: i < 5 ? 2 : i < 15 ? 4 : 6,
 }));
 
 function BookTable() {
-  const location = useLocation();
+  const { state } = useLocation();
   const navigate = useNavigate();
-  const restaurant = location.state?.restaurant || null;
+  const restaurant = state?.restaurant || null;
 
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -49,14 +34,8 @@ function BookTable() {
     const token = localStorage.getItem("token");
     const role = localStorage.getItem("role");
 
-    if (!token || role !== "customer") {
-      navigate("/");
-      return;
-    }
-
-    if (!restaurant?._id) {
-      navigate("/restaurants");
-    }
+    if (!token || role !== "customer") return navigate("/login");
+    if (!restaurant?._id) return navigate("/restaurants");
   }, [navigate, restaurant]);
 
   useEffect(() => {
@@ -64,42 +43,26 @@ function BookTable() {
   }, [date, time, partySize]);
 
   const minDate = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const pricePerSeat = Number(restaurant?.pricePerSeat) || 150;
 
-  const pricePerSeat = useMemo(
-    () => Number(restaurant?.pricePerSeat) || 150,
-    [restaurant]
+  const availableTables = useMemo(
+    () => TABLE_GRID.filter((t) => t.capacity >= partySize),
+    [partySize]
   );
 
-  const availableTables = useMemo(() => {
-    return TABLE_GRID.filter((table) => table.capacity >= partySize);
-  }, [partySize]);
+  const selectedTable = useMemo(
+    () => availableTables.find((t) => t.id === selectedTableId),
+    [availableTables, selectedTableId]
+  );
 
-  const selectedTable = useMemo(() => {
-    return availableTables.find((table) => table.id === selectedTableId) || null;
-  }, [availableTables, selectedTableId]);
-
-  const totalAmount = useMemo(() => {
-    return partySize * pricePerSeat;
-  }, [partySize, pricePerSeat]);
-
-  const handleBack = useCallback(() => {
-    navigate("/restaurants");
-  }, [navigate]);
+  const totalAmount = partySize * pricePerSeat;
 
   const handleBooking = useCallback(async () => {
-    if (!restaurant?._id) {
-      alert("Restaurant data missing");
-      return;
-    }
-
-    if (!date || !time || !selectedTableId) {
-      alert("Please select date, time, and table");
-      return;
-    }
+    if (!restaurant?._id) return alert("Restaurant data missing");
+    if (!date || !time || !selectedTableId) return alert("Select date, time, and table");
 
     try {
       setLoading(true);
-
       const token = localStorage.getItem("token");
 
       const res = await fetch("http://localhost:5000/api/bookings", {
@@ -119,16 +82,12 @@ function BookTable() {
       });
 
       const data = await res.json();
+      if (!res.ok) return alert(data.message || "Booking failed");
 
-      if (!res.ok) {
-        alert(data.message || "Booking failed");
-        return;
-      }
-
-      alert("✅ Booking Confirmed!");
-      navigate("/customer");
-    } catch (error) {
-      console.error("Booking error:", error);
+      alert(data.message || "Booking confirmed");
+      navigate("/profile");
+    } catch (err) {
+      console.error("Booking error:", err);
       alert("Server error");
     } finally {
       setLoading(false);
@@ -139,25 +98,21 @@ function BookTable() {
     <div className="book-table-page">
       <div className="book-table-container">
         <div className="booking-header">
-          <div className="booking-header-top">
-            <button type="button" className="back-btn" onClick={handleBack}>
-              ← Back to Restaurants
-            </button>
-          </div>
+          <button type="button" className="back-btn" onClick={() => navigate("/restaurants")}>
+            ← Back to Restaurants
+          </button>
 
           <h1 className="booking-title">Reserve Your Experience</h1>
           <p className="booking-subtitle">
             Book your table at{" "}
-            <span className="restaurant-highlight">
-              {restaurant?.name || "the Restaurant"}
-            </span>
+            <span className="restaurant-highlight">{restaurant?.name || "Restaurant"}</span>
           </p>
         </div>
 
         <div className="restaurant-info-card">
           <div className="restaurant-info-left">
             <h2>{restaurant?.name || "Restaurant"}</h2>
-            <p>{restaurant?.cuisine || "Fine Dining Experience"}</p>
+            <p>{restaurant?.cuisine || restaurant?.tag || "Fine Dining Experience"}</p>
           </div>
 
           <div className="restaurant-info-right">
@@ -199,9 +154,7 @@ function BookTable() {
                 <button
                   key={option.id}
                   type="button"
-                  className={`party-option-btn ${
-                    partySize === option.count ? "active" : ""
-                  }`}
+                  className={`party-option-btn ${partySize === option.count ? "active" : ""}`}
                   onClick={() => setPartySize(option.count)}
                 >
                   <span className="party-icon">{option.icon}</span>
@@ -215,33 +168,18 @@ function BookTable() {
           <section className="seating-chart-panel">
             <div className="section-head">
               <h3>2. Pick a Table</h3>
-              <span className="table-help-text">
-                Tables shown for {partySize} guest{partySize > 1 ? "s" : ""}
-              </span>
+              <span className="table-help-text">Tables for {partySize} guest{partySize > 1 ? "s" : ""}</span>
             </div>
 
             <div className="floor-plan-box">
               <span className="interior-label">RESTAURANT INTERIOR</span>
-
-              <div className="table-legend">
-                <div className="legend-item">
-                  <span className="legend-box available-box"></span>
-                  <span>Available</span>
-                </div>
-                <div className="legend-item">
-                  <span className="legend-box selected-box"></span>
-                  <span>Selected</span>
-                </div>
-              </div>
 
               <div className="table-matrix">
                 {availableTables.map((table) => (
                   <button
                     key={table.id}
                     type="button"
-                    className={`table-unit ${
-                      selectedTableId === table.id ? "selected" : "available"
-                    }`}
+                    className={`table-unit ${selectedTableId === table.id ? "selected" : "available"}`}
                     onClick={() => setSelectedTableId(table.id)}
                   >
                     <span className="t-id">{table.id}</span>
@@ -249,12 +187,6 @@ function BookTable() {
                   </button>
                 ))}
               </div>
-
-              {availableTables.length === 0 && (
-                <p className="no-table-text">
-                  No suitable tables available for this party size.
-                </p>
-              )}
             </div>
           </section>
 
@@ -263,30 +195,11 @@ function BookTable() {
 
             <div className="summary-card">
               <div className="summary-info">
-                <div className="info-row">
-                  <span>Restaurant</span>
-                  <span>{restaurant?.name || "Not selected"}</span>
-                </div>
-                <div className="info-row">
-                  <span>Date</span>
-                  <span>{date || "Not Selected"}</span>
-                </div>
-                <div className="info-row">
-                  <span>Time</span>
-                  <span>{time || "Not Selected"}</span>
-                </div>
-                <div className="info-row">
-                  <span>Table</span>
-                  <span>{selectedTable?.id || "None"}</span>
-                </div>
-                <div className="info-row">
-                  <span>Seats</span>
-                  <span>{partySize}</span>
-                </div>
-                <div className="info-row">
-                  <span>Capacity</span>
-                  <span>{selectedTable?.capacity || "-"}</span>
-                </div>
+                <div className="info-row"><span>Restaurant</span><span>{restaurant?.name || "Not selected"}</span></div>
+                <div className="info-row"><span>Date</span><span>{date || "Not selected"}</span></div>
+                <div className="info-row"><span>Time</span><span>{time || "Not selected"}</span></div>
+                <div className="info-row"><span>Table</span><span>{selectedTable?.id || "None"}</span></div>
+                <div className="info-row"><span>Seats</span><span>{partySize}</span></div>
               </div>
 
               <div className="price-box">

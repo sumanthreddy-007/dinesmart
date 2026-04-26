@@ -51,8 +51,9 @@ const Restaurant = mongoose.model(
 
 const bookingSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
     userEmail: { type: String, required: true, trim: true, lowercase: true },
+    customerName: { type: String, default: "", trim: true },
     restaurantId: { type: mongoose.Schema.Types.ObjectId, ref: "Restaurant", required: true, index: true },
     restaurantName: { type: String, required: true, trim: true, index: true },
     date: { type: String, required: true, trim: true, index: true },
@@ -60,6 +61,7 @@ const bookingSchema = new mongoose.Schema(
     partySize: { type: Number, required: true, min: 1 },
     tableId: { type: String, default: "", trim: true },
     totalAmount: { type: Number, required: true, min: 0 },
+    source: { type: String, enum: ["online", "walkin"], default: "online" },
     status: {
       type: String,
       enum: ["confirmed", "waiting", "seated", "cancelled"],
@@ -120,25 +122,19 @@ const asyncHandler = (fn) => (req, res) =>
     res.status(500).json({ message: "Server error" });
   });
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 const restaurantPayload = (body = {}) => {
   const data = {};
-
   if (body.name !== undefined) data.name = cleanText(body.name);
   if (body.location !== undefined) data.location = cleanText(body.location);
   if (body.tables !== undefined) data.tables = Number(body.tables);
   if (body.pricePerSeat !== undefined) data.pricePerSeat = Number(body.pricePerSeat);
-
-  if (body.image !== undefined) {
-    data.image = body.image?.trim() || "/dinesmart-logo.png";
-  } else {
-    data.image = "/dinesmart-logo.png";
-  }
-
+  if (body.image !== undefined) data.image = body.image?.trim() || "/dinesmart-logo.png";
   if (body.tag !== undefined) data.tag = cleanText(body.tag);
   if (body.rating !== undefined) data.rating = Number(body.rating);
   if (body.menu !== undefined) data.menu = Array.isArray(body.menu) ? body.menu : [];
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
-
   return data;
 };
 
@@ -150,27 +146,16 @@ app.post("/api/auth/register", asyncHandler(async (req, res) => {
   const email = cleanEmail(req.body.email);
   const { password } = req.body;
   const role = req.body.role || "customer";
-  const selectedRestaurantId = req.body.restaurantId || null;
 
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required" });
-  }
-
-  if (await User.findOne({ email })) {
-    return res.status(400).json({ message: "User already exists" });
-  }
+  if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
+  if (await User.findOne({ email })) return res.status(400).json({ message: "User already exists" });
 
   let restaurant = null;
 
   if (role === "staff") {
-    if (!selectedRestaurantId) {
-      return res.status(400).json({ message: "Staff must select a restaurant" });
-    }
-
-    restaurant = await Restaurant.findOne({ _id: selectedRestaurantId, isActive: true }).lean();
-    if (!restaurant) {
-      return res.status(404).json({ message: "Selected restaurant not found" });
-    }
+    if (!req.body.restaurantId) return res.status(400).json({ message: "Staff must select a restaurant" });
+    restaurant = await Restaurant.findOne({ _id: req.body.restaurantId, isActive: true }).lean();
+    if (!restaurant) return res.status(404).json({ message: "Selected restaurant not found" });
   }
 
   const user = await User.create({
@@ -181,45 +166,20 @@ app.post("/api/auth/register", asyncHandler(async (req, res) => {
     restaurantName: restaurant?.name || "",
   });
 
-  res.status(201).json({
-    message: "Registration successful",
-    token: sign(user),
-    user: userOut(user),
-  });
+  res.status(201).json({ message: "Registration successful", token: sign(user), user: userOut(user) });
 }));
 
 app.post("/api/auth/login", asyncHandler(async (req, res) => {
   const email = cleanEmail(req.body.email);
   const { password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required" });
-  }
+  if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
 
   const user = await User.findOne({ email });
   if (!user) return res.status(400).json({ message: "User not found" });
 
   if (!(await bcrypt.compare(password, user.password))) {
     return res.status(400).json({ message: "Invalid credentials" });
-  }
-
-  if (user.role === "staff" && user.restaurantId) {
-    const restaurant = await Restaurant.findById(user.restaurantId).select("name isActive").lean();
-
-    if (!restaurant) {
-      user.restaurantId = null;
-      user.restaurantName = "";
-      await user.save();
-    } else {
-      if (!restaurant.isActive) {
-        return res.status(403).json({ message: "Assigned restaurant is inactive" });
-      }
-
-      if (user.restaurantName !== restaurant.name) {
-        user.restaurantName = restaurant.name;
-        await user.save();
-      }
-    }
   }
 
   res.json({ token: sign(user), user: userOut(user) });
@@ -238,37 +198,25 @@ app.post("/api/admin/restaurants", auth, allow("admin"), asyncHandler(async (req
   const data = restaurantPayload(req.body);
   if (!data.name) return res.status(400).json({ message: "Restaurant name is required" });
 
-  const exists = await Restaurant.findOne({
-    name: { $regex: `^${data.name}$`, $options: "i" },
-  }).lean();
-
+  const exists = await Restaurant.findOne({ name: { $regex: `^${data.name}$`, $options: "i" } }).lean();
   if (exists) return res.status(400).json({ message: "Restaurant already exists" });
 
-  const restaurant = await Restaurant.create({ tables: 10, ...data });
+  const restaurant = await Restaurant.create({ tables: 10, image: "/dinesmart-logo.png", ...data });
   res.status(201).json({ message: "Restaurant added successfully", restaurant });
 }));
 
 app.put("/api/admin/restaurants/:id", auth, allow("admin"), asyncHandler(async (req, res) => {
-  const restaurant = await Restaurant.findByIdAndUpdate(
-    req.params.id,
-    restaurantPayload(req.body),
-    { new: true, runValidators: true }
-  );
+  const restaurant = await Restaurant.findByIdAndUpdate(req.params.id, restaurantPayload(req.body), {
+    new: true,
+    runValidators: true,
+  });
 
   if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
 
-  if (req.body.name !== undefined) {
-    await Promise.all([
-      User.updateMany(
-        { role: "staff", restaurantId: restaurant._id },
-        { $set: { restaurantName: restaurant.name } }
-      ),
-      Booking.updateMany(
-        { restaurantId: restaurant._id },
-        { $set: { restaurantName: restaurant.name } }
-      ),
-    ]);
-  }
+  await Promise.all([
+    User.updateMany({ role: "staff", restaurantId: restaurant._id }, { $set: { restaurantName: restaurant.name } }),
+    Booking.updateMany({ restaurantId: restaurant._id }, { $set: { restaurantName: restaurant.name } }),
+  ]);
 
   res.json({ message: "Restaurant updated successfully", restaurant });
 }));
@@ -311,6 +259,7 @@ app.post("/api/bookings", auth, allow("customer"), asyncHandler(async (req, res)
   const booking = await Booking.create({
     userId: req.user.id,
     userEmail: req.user.email,
+    customerName: req.user.email.split("@")[0],
     restaurantId: restaurant._id,
     restaurantName: restaurant.name,
     date,
@@ -318,13 +267,11 @@ app.post("/api/bookings", auth, allow("customer"), asyncHandler(async (req, res)
     partySize: Number(partySize),
     tableId: clash ? "" : chosenTable,
     totalAmount: Number(totalAmount),
+    source: "online",
     status: clash ? "waiting" : "confirmed",
   });
 
-  res.status(201).json({
-    message: clash ? "Added to waitlist" : "Booking confirmed",
-    booking,
-  });
+  res.status(201).json({ message: clash ? "Added to waitlist" : "Booking confirmed", booking });
 }));
 
 app.get("/api/bookings/my", auth, allow("customer"), asyncHandler(async (req, res) => {
@@ -334,23 +281,19 @@ app.get("/api/bookings/my", auth, allow("customer"), asyncHandler(async (req, re
 app.get("/api/bookings", auth, allow("staff", "admin"), asyncHandler(async (req, res) => {
   const filter = req.user.role === "staff" ? { restaurantId: req.user.restaurantId } : {};
   if (req.user.role === "staff" && !req.user.restaurantId) return res.json([]);
-  res.json(await Booking.find(filter).sort({ createdAt: -1 }).lean());
+
+  res.json(await Booking.find(filter).sort({ date: 1, time: 1, createdAt: -1 }).lean());
 }));
 
 app.put("/api/bookings/:id/cancel", auth, asyncHandler(async (req, res) => {
   const booking = await Booking.findById(req.params.id);
   if (!booking) return res.status(404).json({ message: "Booking not found" });
 
-  const own = booking.userId.toString() === req.user.id;
+  const own = booking.userId?.toString() === req.user.id;
   const admin = req.user.role === "admin";
-  const sameStaffRestaurant =
-    req.user.role === "staff" &&
-    req.user.restaurantId &&
-    booking.restaurantId.toString() === String(req.user.restaurantId);
+  const staff = req.user.role === "staff" && booking.restaurantId.toString() === String(req.user.restaurantId);
 
-  if (!own && !admin && !sameStaffRestaurant) {
-    return res.status(403).json({ message: "Access denied" });
-  }
+  if (!own && !admin && !staff) return res.status(403).json({ message: "Access denied" });
 
   booking.status = "cancelled";
   await booking.save();
@@ -360,32 +303,24 @@ app.put("/api/bookings/:id/cancel", auth, asyncHandler(async (req, res) => {
 
 /* STAFF */
 app.get("/api/staff/dashboard", auth, allow("staff"), asyncHandler(async (req, res) => {
-  if (!req.user.restaurantId) {
-    return res.json({ hotelName: "No Restaurant Assigned", tables: [], waitlist: [] });
-  }
+  if (!req.user.restaurantId) return res.json({ hotelName: "No Restaurant Assigned", tables: [], waitlist: [] });
 
   const restaurant = await Restaurant.findById(req.user.restaurantId).lean();
-  if (!restaurant) {
-    return res.json({ hotelName: "Restaurant Not Found", tables: [], waitlist: [] });
-  }
+  if (!restaurant) return res.json({ hotelName: "Restaurant Not Found", tables: [], waitlist: [] });
 
-  const today = new Date().toISOString().slice(0, 10);
-
-  const activeBookings = await Booking.find({
+  const bookings = await Booking.find({
     restaurantId: req.user.restaurantId,
-    date: today,
-    status: { $in: ["confirmed", "seated"] },
-  }).select("tableId userEmail time partySize").lean();
-
-  const waitingBookings = await Booking.find({
-    restaurantId: req.user.restaurantId,
-    date: today,
-    status: "waiting",
-  }).select("userEmail time partySize").sort({ createdAt: 1 }).lean();
+    status: { $in: ["confirmed", "seated", "waiting"] },
+  })
+    .sort({ date: 1, time: 1, createdAt: 1 })
+    .lean();
 
   const bookedMap = new Map();
-  activeBookings.forEach((b) => {
-    if (b.tableId) bookedMap.set(b.tableId, b);
+
+  bookings.forEach((b) => {
+    if (b.tableId && ["confirmed", "seated"].includes(b.status)) {
+      bookedMap.set(b.tableId, b);
+    }
   });
 
   const tables = Array.from({ length: restaurant.tables || 10 }, (_, i) => {
@@ -398,33 +333,57 @@ app.get("/api/staff/dashboard", auth, allow("staff"), asyncHandler(async (req, r
       name,
       capacity: n <= 3 ? 2 : n <= 7 ? 4 : 6,
       status: booking ? "occupied" : "available",
-      currentGuest: booking ? booking.userEmail.split("@")[0] : "",
-      bookingTime: booking ? booking.time : "",
+      currentGuest: booking ? booking.customerName || booking.userEmail.split("@")[0] : "",
+      bookingTime: booking ? `${booking.date} ${booking.time}` : "",
     };
   });
 
   res.json({
     hotelName: restaurant.name,
     tables,
-    waitlist: waitingBookings.map((b) => ({
-      _id: b._id,
-      name: b.userEmail.split("@")[0],
-      time: b.time,
-      guests: b.partySize,
-    })),
+    waitlist: bookings
+      .filter((b) => b.status === "waiting")
+      .map((b) => ({
+        _id: b._id,
+        name: b.customerName || b.userEmail.split("@")[0],
+        time: `${b.date} ${b.time}`,
+        guests: b.partySize,
+      })),
   });
+}));
+
+app.post("/api/staff/walkin", auth, allow("staff"), asyncHandler(async (req, res) => {
+  const { name, time, guests } = req.body;
+
+  if (!req.user.restaurantId) return res.status(400).json({ message: "No restaurant assigned" });
+  if (!name || !time || !guests) return res.status(400).json({ message: "Name, time and guests are required" });
+
+  const restaurant = await Restaurant.findById(req.user.restaurantId).lean();
+  if (!restaurant) return res.status(404).json({ message: "Restaurant not found" });
+
+  const booking = await Booking.create({
+    userId: null,
+    userEmail: `${Date.now()}@walkin.local`,
+    customerName: cleanText(name),
+    restaurantId: restaurant._id,
+    restaurantName: restaurant.name,
+    date: today(),
+    time,
+    partySize: Number(guests),
+    tableId: "",
+    totalAmount: 0,
+    source: "walkin",
+    status: "waiting",
+  });
+
+  res.status(201).json({ message: "Walk-in added to waitlist", booking });
 }));
 
 app.post("/api/staff/assign", auth, allow("staff"), asyncHandler(async (req, res) => {
   const { tableId, customerId } = req.body;
 
-  if (!req.user.restaurantId) {
-    return res.status(400).json({ message: "No restaurant assigned" });
-  }
-
-  if (!tableId || !customerId) {
-    return res.status(400).json({ message: "tableId and customerId are required" });
-  }
+  if (!req.user.restaurantId) return res.status(400).json({ message: "No restaurant assigned" });
+  if (!tableId || !customerId) return res.status(400).json({ message: "tableId and customerId are required" });
 
   const booking = await Booking.findOne({
     _id: customerId,
@@ -432,9 +391,7 @@ app.post("/api/staff/assign", auth, allow("staff"), asyncHandler(async (req, res
     status: "waiting",
   });
 
-  if (!booking) {
-    return res.status(404).json({ message: "Waiting customer not found" });
-  }
+  if (!booking) return res.status(404).json({ message: "Waiting customer not found" });
 
   const clash = await Booking.findOne({
     restaurantId: req.user.restaurantId,
@@ -444,15 +401,13 @@ app.post("/api/staff/assign", auth, allow("staff"), asyncHandler(async (req, res
     status: { $in: ["confirmed", "seated"] },
   }).lean();
 
-  if (clash) {
-    return res.status(400).json({ message: "Table already occupied for this slot" });
-  }
+  if (clash) return res.status(400).json({ message: "Table already occupied for this slot" });
 
   booking.tableId = tableId;
   booking.status = "seated";
   await booking.save();
 
-  res.json({ message: "Table assigned successfully" });
+  res.json({ message: "Table assigned successfully", booking });
 }));
 
 /* ADMIN ANALYTICS */

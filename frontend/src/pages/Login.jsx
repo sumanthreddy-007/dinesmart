@@ -35,17 +35,10 @@ function Login() {
         });
 
         const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Failed to load restaurants");
 
-        if (!res.ok) {
-          throw new Error(data.message || "Failed to load restaurants");
-        }
-
-        const list = Array.isArray(data) ? data : [];
-        setRestaurants(list);
-
-        if (list.length > 0) {
-          setRestaurantId(list[0]._id);
-        }
+        setRestaurants(Array.isArray(data) ? data : []);
+        setRestaurantId(data?.[0]?._id || "");
       } catch (error) {
         if (error.name !== "AbortError") {
           console.error("Restaurant fetch error:", error);
@@ -58,14 +51,11 @@ function Login() {
     };
 
     fetchRestaurants();
-
     return () => controller.abort();
   }, [isLoginView, role]);
 
   useEffect(() => {
-    if (role !== "staff") {
-      setRestaurantId("");
-    }
+    if (role !== "staff") setRestaurantId("");
   }, [role]);
 
   const handleSubmit = async (e) => {
@@ -92,55 +82,35 @@ function Login() {
     try {
       const res = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const contentType = res.headers.get("content-type");
-      let data = {};
-
-      if (contentType && contentType.includes("application/json")) {
-        data = await res.json();
-      } else {
-        const text = await res.text();
-        console.error("Non-JSON response:", text);
-        alert("Unexpected server response");
-        return;
-      }
+      const data = await res.json();
 
       if (!res.ok) {
-        alert(
-          data.message || (isLoginView ? "Login failed" : "Registration failed")
-        );
+        alert(data.message || (isLoginView ? "Login failed" : "Registration failed"));
         return;
       }
 
       localStorage.setItem("token", data.token);
       localStorage.setItem("role", data.user.role);
+      localStorage.setItem("userEmail", data.user.email);
       localStorage.setItem("email", data.user.email);
+      localStorage.setItem("name", data.user.email.split("@")[0]);
 
-      if (data.user.restaurantId) {
-        localStorage.setItem("restaurantId", data.user.restaurantId);
-      } else {
-        localStorage.removeItem("restaurantId");
-      }
+      if (data.user.restaurantId) localStorage.setItem("restaurantId", data.user.restaurantId);
+      else localStorage.removeItem("restaurantId");
 
-      if (data.user.restaurantName) {
-        localStorage.setItem("restaurantName", data.user.restaurantName);
-      } else {
-        localStorage.removeItem("restaurantName");
-      }
+      if (data.user.restaurantName) localStorage.setItem("restaurantName", data.user.restaurantName);
+      else localStorage.removeItem("restaurantName");
 
       redirectByRole(data.user.role);
     } catch (error) {
       console.error("Frontend fetch error:", error);
-      alert(error.message || "Server error");
+      alert("Server error");
     }
   };
-
-  const toggleView = () => setIsLoginView((prev) => !prev);
 
   return (
     <div className="login-wrapper">
@@ -156,9 +126,7 @@ function Login() {
             <br />
             Enjoy.
           </h2>
-          <p className="desc">
-            Exclusive dining reservations for hotel guests.
-          </p>
+          <p className="desc">Exclusive dining reservations for hotel guests.</p>
         </div>
 
         <div className="login-right">
@@ -178,11 +146,7 @@ function Login() {
 
               {!isLoginView && (
                 <div className="input-group">
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    required
-                  >
+                  <select value={role} onChange={(e) => setRole(e.target.value)} required>
                     <option value="customer">Customer</option>
                     <option value="staff">Hotel Staff</option>
                     <option value="admin">Admin</option>
@@ -203,9 +167,9 @@ function Login() {
                     ) : restaurants.length === 0 ? (
                       <option value="">No restaurants available</option>
                     ) : (
-                      restaurants.map((restaurant) => (
-                        <option key={restaurant._id} value={restaurant._id}>
-                          {restaurant.name}
+                      restaurants.map((r) => (
+                        <option key={r._id} value={r._id}>
+                          {r.name}
                         </option>
                       ))
                     )}
@@ -228,10 +192,12 @@ function Login() {
               </button>
             </form>
 
-            <button type="button" className="toggle-btn" onClick={toggleView}>
-              {isLoginView
-                ? "Create an account instead"
-                : "Already have an account?"}
+            <button
+              type="button"
+              className="toggle-btn"
+              onClick={() => setIsLoginView((prev) => !prev)}
+            >
+              {isLoginView ? "Create an account instead" : "Already have an account?"}
             </button>
           </div>
         </div>
